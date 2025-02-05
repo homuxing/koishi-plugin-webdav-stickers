@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-webdav-stickers",
-  "description": "一个使用 WebDAV 保存表情包的插件",
+  "description": "一个使用 WebDAV 保存表情包的 Koishi 插件",
   "version": "0.0.1",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -9,14 +9,35 @@
     "dist"
   ],
   "license": "MIT",
-  "scripts": {},
   "keywords": [
     "chatbot",
     "koishi",
-    "plugin"
+    "plugin",
+    "sticker",
+    "webdav"
   ],
-  "devDependencies": {},
   "peerDependencies": {
     "koishi": "^4.18.3"
+  },
+  "dependencies": {
+    "image-size": "^1.2.0",
+    "image-type": "^5.2.0",
+    "sharp": "^0.33.5",
+    "webdav": "^5.7.1"
+  },
+  "homepage": "https://github.com/homuxing/koishi-plugin-webdav-stickers",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/homuxing/koishi-plugin-webdav-stickers.git"
+  },
+  "koishi": {
+    "description": {
+      "zh": "一个使用 WebDAV 保存表情包的插件"
+    },
+    "service": {
+      "required": [
+        "http"
+      ]
+    }
   }
 }
