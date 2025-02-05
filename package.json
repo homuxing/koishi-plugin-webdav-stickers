@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-webdav-stickers",
   "description": "一个使用 WebDAV 保存表情包的 Koishi 插件",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -23,7 +23,7 @@
     "image-size": "^1.2.0",
     "image-type": "^5.2.0",
     "sharp": "^0.33.5",
-    "webdav": "^5.7.1"
+    "webdav": "4.11.2"
   },
   "homepage": "https://github.com/homuxing/koishi-plugin-webdav-stickers",
   "repository": {
