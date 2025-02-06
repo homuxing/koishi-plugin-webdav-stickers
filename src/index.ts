@@ -1,8 +1,17 @@
 import { type Context, Random, Schema, Session } from "koishi";
-import { createClient, type WebDAVClient } from "webdav";
 import sharp from "sharp";
-import imageType from "image-type";
 import { imageSize } from "image-size";
+async function loadWebDAV() {
+  const webdav = await import("webdav");
+  console.log(webdav);
+  // 这里可以使用 webdav
+  return webdav;
+}
+async function loadImageType() {
+  const imageType = await import("image-type");
+  console.log(imageType);
+  return imageType.default;
+}
 
 export const name = "webdav-stickers";
 export const usage = `
@@ -39,6 +48,7 @@ export interface Config {
   // triggerWords: string[];
   successMessage: string[];
   stickerWidth: number;
+  staticImageFormat: "png" | "gif" | "jpg";
 }
 
 interface ImageElement {
@@ -82,15 +92,81 @@ export const Config: Schema<Config> = Schema.intersect([
     stickerWidth: Schema.number()
       .default(300)
       .description("表情包的宽度，默认300px，超过尺寸的静态图片会被压缩"),
+    staticImageFormat: Schema.union(["png", "gif", "jpg"])
+      .default("gif")
+      .description("静态图片的格式，默认gif，不会处理mface"),
   }).description("图片配置"),
 ]);
 
 export async function apply(ctx: Context) {
+  const { createClient } = await loadWebDAV();
+  const imageType = await loadImageType();
+
   const webDavUrl = ctx.config.webdavUrl + "/" + ctx.config.rootFolder;
   const webdavClient = createClient(webDavUrl, {
     username: ctx.config.webdavUsername,
     password: ctx.config.webdavPassword,
   });
+
+  async function saveImage(image: ImageElement, folder?: string) {
+    if (folder && !(await webdavClient.exists(`/${folder}`))) {
+      await webdavClient.createDirectory(`/${folder}`);
+    }
+    let buffer = await ctx.http.get(image.src);
+
+    // 检测文件是否是gif
+    const fileType = await imageType(buffer);
+    ctx.logger.info(`文件类型: ${fileType.ext}`);
+    let filename: string;
+
+    if (fileType.ext === "gif") {
+      filename = `${Date.now()}.gif`;
+    } else {
+      filename = `${Date.now()}.${ctx.config.staticImageFormat}`;
+      const size = imageSize(new Uint8Array(buffer));
+      if (size.width > ctx.config.stickerWidth) {
+        buffer = await sharp(buffer)
+          .resize({ width: ctx.config.stickerWidth })
+          .toFormat(ctx.config.staticImageFormat)
+          .toBuffer();
+      } else {
+        buffer = await sharp(buffer)
+          .toFormat(ctx.config.staticImageFormat)
+          .toBuffer();
+      }
+    }
+
+    // 如果图片大于设定大小，并且不是gif，则压缩
+    const savePath = `${folder ? folder + "/" : ""}${filename}`;
+
+    await webdavClient.putFileContents(savePath, buffer, {
+      overwrite: true,
+    });
+
+    ctx.logger.info(
+      `${filename} 已保存至 ${ctx.config.webdavUrl}/${ctx.config.rootFolder}/${savePath}`
+    );
+  }
+
+  async function saveMface(mface: MfaceElement, folder?: string) {
+    if (folder && !(await webdavClient.exists(`/${folder}`))) {
+      await webdavClient.createDirectory(`/${folder}`);
+    }
+
+    const extension = mface.url.split(".").pop();
+    const filename = `${mface.emojiPackageId}-${mface.summary}.${extension}`;
+    const savePath = `${folder ? folder + "/" : ""}${filename}`;
+
+    let buffer = await ctx.http.get(mface.url);
+    await webdavClient.putFileContents(savePath, buffer, {
+      overwrite: true,
+    });
+
+    ctx.logger.info(
+      `${filename} 已保存至 ${ctx.config.webdavUrl}/${ctx.config.rootFolder}/${savePath}`
+    );
+  }
+
   ctx
     .user(...ctx.config.allowUsers)
     .command("save-sticker <folder:text>", "获取表情包", {
@@ -122,8 +198,8 @@ export async function apply(ctx: Context) {
 
       ctx.logger.info(JSON.stringify({ images, mfaces, folder }));
       const promises = [
-        ...images.map((image) => saveImage(image, ctx, webdavClient, folder)),
-        ...mfaces.map((mface) => saveMface(mface, ctx, webdavClient, folder)),
+        ...images.map((image) => saveImage(image, folder)),
+        ...mfaces.map((mface) => saveMface(mface, folder)),
       ];
 
       Promise.allSettled(promises).then((results) => {
@@ -138,75 +214,8 @@ export async function apply(ctx: Context) {
           session.send(Random.pick(ctx.config.successMessage));
         }
         if (rejected.length > 0) {
-          ctx.logger.error(rejected);
+          ctx.logger.error(rejected.map((r) => r.reason));
         }
       });
     });
-}
-
-async function saveImage(
-  image: ImageElement,
-  ctx: Context,
-  webdavClient: WebDAVClient,
-  folder?: string
-) {
-  if (folder && !(await webdavClient.exists(`/${folder}`))) {
-    await webdavClient.createDirectory(`/${folder}`);
-  }
-
-  let buffer = await ctx.http.get(image.src);
-  // 检测文件是否是gif
-  const fileType = await imageType(buffer);
-  ctx.logger.info(`文件类型: ${fileType.ext}`);
-  let filename: string;
-  if (fileType.ext === "gif") {
-    filename = `${Date.now()}.gif`;
-  } else {
-    filename = `${Date.now()}.png`;
-    const size = imageSize(new Uint8Array(buffer));
-
-    if (size.width > ctx.config.stickerWidth) {
-      buffer = await sharp(buffer)
-        .resize({ width: ctx.config.stickerWidth })
-        .png()
-        .toBuffer();
-    } else {
-      buffer = await sharp(buffer).png().toBuffer();
-    }
-  }
-
-  // 如果图片大于设定大小，并且不是gif，则压缩
-  const savePath = `${folder ? folder + "/" : ""}${filename}`;
-
-  await webdavClient.putFileContents(savePath, buffer, {
-    overwrite: true,
-  });
-
-  ctx.logger.info(
-    `${filename} 已保存至 ${ctx.config.webdavUrl}/${ctx.config.rootFolder}/${savePath}`
-  );
-}
-
-async function saveMface(
-  mface: MfaceElement,
-  ctx: Context,
-  webdavClient: WebDAVClient,
-  folder?: string
-) {
-  if (folder && !(await webdavClient.exists(`/${folder}`))) {
-    await webdavClient.createDirectory(`/${folder}`);
-  }
-
-  const extension = mface.url.split(".").pop();
-  const filename = `${mface.emojiPackageId}-${mface.summary}.${extension}`;
-  const savePath = `${folder ? folder + "/" : ""}${filename}`;
-
-  let buffer = await ctx.http.get(mface.url);
-  await webdavClient.putFileContents(savePath, buffer, {
-    overwrite: true,
-  });
-
-  ctx.logger.info(
-    `${filename} 已保存至 ${ctx.config.webdavUrl}/${ctx.config.rootFolder}/${savePath}`
-  );
 }
