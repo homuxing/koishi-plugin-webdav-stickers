@@ -68,9 +68,7 @@ interface MfaceElement {
 
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
-    webdavUrl: Schema.string()
-      .required()
-      .description("WebDAV 服务器地址，不需要以 / 结尾"),
+    webdavUrl: Schema.string().required().description("WebDAV 服务器地址"),
     webdavUsername: Schema.string().required().description("WebDAV 用户名"),
     webdavPassword: Schema.string()
       .role("secret")
@@ -101,8 +99,11 @@ export const Config: Schema<Config> = Schema.intersect([
 export async function apply(ctx: Context) {
   const { createClient } = await loadWebDAV();
   const imageType = await loadImageType();
-
-  const webDavUrl = ctx.config.webdavUrl + "/" + ctx.config.rootFolder;
+  ctx.logger.info("成功加载 imageType 和 webdav");
+  const webDavUrl = ctx.config.webdavUrl.endsWith("/")
+    ? ctx.config.webdavUrl
+    : ctx.config.webdavUrl + "/" + ctx.config.rootFolder;
+  ctx.logger.info("webDavUrl: " + webDavUrl);
   const webdavClient = createClient(webDavUrl, {
     username: ctx.config.webdavUsername,
     password: ctx.config.webdavPassword,
@@ -177,6 +178,7 @@ export async function apply(ctx: Context) {
     .alias("盗图", "保存图片")
     .action(async ({ session }, folder) => {
       const quote = session.quote;
+      ctx.logger.info(quote, "quote");
       if (!quote) return;
 
       const images: Array<ImageElement> = [];
@@ -196,7 +198,7 @@ export async function apply(ctx: Context) {
         return;
       }
 
-      ctx.logger.info(JSON.stringify({ images, mfaces, folder }));
+      ctx.logger.info({ images, mfaces, folder });
       const promises = [
         ...images.map((image) => saveImage(image, folder)),
         ...mfaces.map((mface) => saveMface(mface, folder)),
